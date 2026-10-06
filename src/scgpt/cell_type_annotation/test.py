@@ -11,12 +11,26 @@ model_config = f"{meta['resources_dir']}/args.json"
 model_vocab = f"{meta['resources_dir']}/vocab.json"
 
 
-def test_cell_type_inference(run_component, tmp_path):
+@pytest.fixture(scope="module")
+def subset_input(tmp_path_factory):
+    # Keep a few cells per sample so CPU inference stays fast
+    # while dsbn still sees multiple batches
+    input_mdata = read_h5mu(input_path)
+    obs_names = (
+        input_mdata.mod["rna"].obs.groupby("sample", observed=True).head(15).index
+    )
+    subset = input_mdata[obs_names].copy()
+    subset_path = tmp_path_factory.mktemp("subset") / "Kim2020_Lung_subset_small.h5mu"
+    subset.write_h5mu(subset_path)
+    return subset_path
+
+
+def test_cell_type_inference(run_component, tmp_path, subset_input):
     output_annotation_file = tmp_path / "Kim2020_Lung_subset_annotated.h5mu"
 
     args = [
         "--input",
-        input_path,
+        subset_input,
         "--output",
         output_annotation_file,
         "--modality",
@@ -57,7 +71,7 @@ def test_cell_type_inference(run_component, tmp_path):
     )
     args = [
         "--input",
-        input_path,
+        subset_input,
         "--output",
         output_annotation_file_without_dsbn,
         "--modality",
@@ -93,14 +107,14 @@ def test_cell_type_inference(run_component, tmp_path):
     ).all(), "Cell type predictions with and without dsbn are the same"
 
 
-def test_annotation_dsbn_without_batch_labels(run_component, tmp_path):
+def test_annotation_dsbn_without_batch_labels(run_component, tmp_path, subset_input):
     output_annotation_labels_without_dsbn = (
         tmp_path / "Kim2020_Lung_subset_annotated_labels_without_dsbn.h5mu"
     )
 
     args = [
         "--input",
-        input_path,
+        subset_input,
         "--output",
         output_annotation_labels_without_dsbn,
         "--modality",
@@ -131,7 +145,7 @@ def test_annotation_dsbn_without_batch_labels(run_component, tmp_path):
     )
 
 
-def test_annotation_non_existing_keys(run_component, tmp_path):
+def test_annotation_non_existing_keys(run_component, tmp_path, subset_input):
     output_annotation_dummy_values = (
         tmp_path / "Kim2020_Lung_subset_annotated_dummy_key.h5mu"
     )
@@ -139,7 +153,7 @@ def test_annotation_non_existing_keys(run_component, tmp_path):
     # Test for non-existing tokenized values key
     args = [
         "--input",
-        input_path,
+        subset_input,
         "--output",
         output_annotation_dummy_values,
         "--modality",
@@ -172,13 +186,13 @@ def test_annotation_non_existing_keys(run_component, tmp_path):
     )
 
 
-def test_checkpoint_architecture(run_component, tmp_path):
+def test_checkpoint_architecture(run_component, tmp_path, subset_input):
     output_dummy_model_key = tmp_path / "Kim2020_Lung_subset_annotated_dummy_key.h5mu"
 
     # Test for non-existing model file keys
     args = [
         "--input",
-        input_path,
+        subset_input,
         "--output",
         output_dummy_model_key,
         "--modality",

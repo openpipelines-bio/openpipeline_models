@@ -20,13 +20,26 @@ model_config_file = f"{meta['resources_dir']}/source/args.json"
 input_file = mu.read(input)
 
 
-def test_integration_embedding(run_component, tmp_path):
+@pytest.fixture(scope="module")
+def subset_input(tmp_path_factory):
+    # Keep a few cells per sample so CPU inference stays fast
+    # while dsbn still sees multiple batches
+    obs_names = (
+        input_file.mod["rna"].obs.groupby("sample", observed=True).head(15).index
+    )
+    subset = input_file[obs_names].copy()
+    subset_path = tmp_path_factory.mktemp("subset") / "Kim2020_Lung_subset_small.h5mu"
+    subset.write_h5mu(subset_path)
+    return subset_path
+
+
+def test_integration_embedding(run_component, tmp_path, subset_input):
     output_embedding_file = tmp_path / "Kim2020_Lung_subset_embedded.h5mu"
 
     run_component(
         [
             "--input",
-            input,
+            subset_input,
             "--modality",
             "rna",
             "--model",
@@ -47,8 +60,6 @@ def test_integration_embedding(run_component, tmp_path):
             "padding_mask",
             "--output",
             output_embedding_file,
-            "--batch_size",
-            "4",
         ]
     )
 
@@ -80,7 +91,7 @@ def test_integration_embedding(run_component, tmp_path):
     run_component(
         [
             "--input",
-            input,
+            subset_input,
             "--modality",
             "rna",
             "--model",
@@ -99,8 +110,6 @@ def test_integration_embedding(run_component, tmp_path):
             "padding_mask",
             "--output",
             output_embedding_file_without_dsbn,
-            "--batch_size",
-            "4",
         ]
     )
 
@@ -114,12 +123,12 @@ def test_integration_embedding(run_component, tmp_path):
     ).all(), "Embeddings with and without dsbn are the same"
 
 
-def test_integration_embedding_dsbn_without_batch_labels(run_component, tmp_path):
+def test_integration_embedding_dsbn_without_batch_labels(run_component, tmp_path, subset_input):
     output_embedding_file = tmp_path / "Kim2020_Lung_subset_embedded.h5mu"
 
     args = [
         "--input",
-        input,
+        subset_input,
         "--modality",
         "rna",
         "--model",
@@ -148,13 +157,13 @@ def test_integration_embedding_dsbn_without_batch_labels(run_component, tmp_path
     )
 
 
-def test_integration_embedding_non_existing_keys(run_component, tmp_path):
+def test_integration_embedding_non_existing_keys(run_component, tmp_path, subset_input):
     output_embedding_file = tmp_path / "Kim2020_Lung_subset_embedded.h5mu"
 
     # Test for non-existing gene names key
     args_1 = [
         "--input",
-        input,
+        subset_input,
         "--modality",
         "rna",
         "--model",
@@ -188,7 +197,7 @@ def test_integration_embedding_non_existing_keys(run_component, tmp_path):
     # Test for non-existing batch label key
     args_2 = [
         "--input",
-        input,
+        subset_input,
         "--modality",
         "rna",
         "--model",
@@ -220,7 +229,7 @@ def test_integration_embedding_non_existing_keys(run_component, tmp_path):
     # Test for non-existing tokenized values key
     args_3 = [
         "--input",
-        input,
+        subset_input,
         "--modality",
         "rna",
         "--model",
@@ -251,13 +260,13 @@ def test_integration_embedding_non_existing_keys(run_component, tmp_path):
     )
 
 
-def test_finetuned_model(run_component, tmp_path):
+def test_finetuned_model(run_component, tmp_path, subset_input):
     output_embedding_file = tmp_path / "Kim2020_Lung_subset_embedded.h5mu"
 
     run_component(
         [
             "--input",
-            input,
+            subset_input,
             "--modality",
             "rna",
             "--model",
@@ -280,8 +289,6 @@ def test_finetuned_model(run_component, tmp_path):
             "model_state_dict",
             "--output",
             output_embedding_file,
-            "--batch_size",
-            "4",
         ]
     )
 
@@ -308,12 +315,12 @@ def test_finetuned_model(run_component, tmp_path):
     )
 
 
-def test_finetuned_model_architecture(run_component, tmp_path):
+def test_finetuned_model_architecture(run_component, tmp_path, subset_input):
     output_embedding_file = tmp_path / "Kim2020_Lung_subset_embedded.h5mu"
 
     args = [
         "--input",
-        input,
+        subset_input,
         "--modality",
         "rna",
         "--model",
