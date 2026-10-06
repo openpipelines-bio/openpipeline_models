@@ -10,6 +10,12 @@ links:
   repository: https://github.com/openpipelines-bio/openpipeline_models
   docker_registry: ghcr.io
 
+repositories:
+  - name: openpipeline
+    repo: openpipeline
+    type: vsh
+    tag: v4.2.0
+
 info:
   test_resources:
     - type: s3
