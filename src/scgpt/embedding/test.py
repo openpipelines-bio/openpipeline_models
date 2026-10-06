@@ -60,6 +60,8 @@ def test_integration_embedding(run_component, tmp_path, subset_input):
             "padding_mask",
             "--output",
             output_embedding_file,
+            "--batch_size",
+            "4",
         ]
     )
 
@@ -110,6 +112,8 @@ def test_integration_embedding(run_component, tmp_path, subset_input):
             "padding_mask",
             "--output",
             output_embedding_file_without_dsbn,
+            "--batch_size",
+            "4",
         ]
     )
 
@@ -123,7 +127,9 @@ def test_integration_embedding(run_component, tmp_path, subset_input):
     ).all(), "Embeddings with and without dsbn are the same"
 
 
-def test_integration_embedding_dsbn_without_batch_labels(run_component, tmp_path, subset_input):
+def test_integration_embedding_dsbn_without_batch_labels(
+    run_component, tmp_path, subset_input
+):
     output_embedding_file = tmp_path / "Kim2020_Lung_subset_embedded.h5mu"
 
     args = [
@@ -289,6 +295,8 @@ def test_finetuned_model(run_component, tmp_path, subset_input):
             "model_state_dict",
             "--output",
             output_embedding_file,
+            "--batch_size",
+            "4",
         ]
     )
 
