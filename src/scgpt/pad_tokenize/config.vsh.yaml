@@ -108,10 +108,13 @@ engines:
     image: nvcr.io/nvidia/pytorch:23.09-py3
     setup:
       - type: python
-        __merge__: [ /src/base/requirements/anndata_mudata.yaml, /src/base/requirements/scanpy.yaml ]
-      - type: python
+        __merge__: [ 
+          /src/base/requirements/anndata_mudata.yaml,
+          /src/base/requirements/scanpy.yaml,
+          /src/base/requirements/scgpt.yaml,
+          .
+        ]
         packages:
-          - scgpt==0.2.1
           - ipython~=8.5.0
     __merge__: [ /src/base/requirements/python_test_setup.yaml, .]
 runners:

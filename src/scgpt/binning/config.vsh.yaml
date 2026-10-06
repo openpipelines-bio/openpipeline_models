@@ -81,6 +81,9 @@ engines:
           - procps
       - type: python
         __merge__: [ /src/base/requirements/anndata_mudata.yaml, .]
+        packages:
+          # anndata 0.11 cannot write the string arrays that pandas 3 infers by default
+          - pandas<3
     __merge__: [ /src/base/requirements/python_test_setup.yaml ]
 runners:
   - type: executable
