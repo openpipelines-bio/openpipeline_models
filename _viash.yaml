@@ -19,6 +19,12 @@ info:
     - path: src/workflows/utils/labels_ci.config
       description: Adds the correct memory and CPU labels when running on the Viash Hub CI.
 
+repositories:
+  - name: openpipeline
+    repo: openpipeline
+    type: vsh
+    tag: v4.2.0
+
 config_mods: |
   .resources += {path: '/src/workflows/utils/labels.config', dest: 'nextflow_labels.config'}
   .runners[.type == 'nextflow'].config.script := 'includeConfig("nextflow_labels.config")'
