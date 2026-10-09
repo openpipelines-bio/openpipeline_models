@@ -195,7 +195,7 @@ argument_groups:
       - name: "--pvalue_cutoff"
         type: double
         default: 0.05
-        description: P-value below which a gene counts as significant for `--output_top`.
+        description: Benjamini-Hochberg adjusted p-value (`fdr_bh`) below which a gene counts as significant for `--output_top`.
       - name: "--top_n"
         type: integer
         required: false

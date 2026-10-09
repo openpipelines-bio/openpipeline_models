@@ -63,7 +63,7 @@ workflow test_wf {
       assert n_knockouts == 4 * 5 : "expected 5 knockouts for each of 4 cells, got $n_knockouts"
 
       def ranked = state.output_ranked.readLines()
-      assert ranked[0] == "rank,gene_id,gene_name,median_shift,pvalue,n_cells"
+      assert ranked[0] == "rank,gene_id,gene_name,median_shift,pvalue,fdr_bh,n_cells"
       assert ranked.size() > 1 : "no gene was ranked"
       def top = state.output_top.readLines()
       assert top.size() == Math.min(4, ranked.size()) : "--top_n 3 should give 3 genes"

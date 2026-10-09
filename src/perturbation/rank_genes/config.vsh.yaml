@@ -9,15 +9,18 @@ description: |
   Genes are ranked by the median of `--shift_column` over those cells. Each
   gene's shifts are tested against a baseline of `--n_random` shifts drawn at
   random from all knockouts, with a one-sided Wilcoxon rank-sum (Mann-Whitney U)
-  test for a larger shift.
+  test for a larger shift. The p-values are corrected for multiple testing over
+  all ranked genes with the Benjamini-Hochberg procedure (`fdr_bh`).
 
   `--output_ranked` holds every gene passing the coverage filter.
   `--output_top` holds the top of that table: the first `--top_n` genes, or,
-  without `--top_n`, the uninterrupted run of genes from rank 1 with a p-value
+  without `--top_n`, the uninterrupted run of genes from rank 1 with an `fdr_bh`
   below `--pvalue_cutoff`.
 authors:
   - __merge__: /src/authors/marilyn_degraeve.yaml
     roles: [ author, maintainer ]
+  - __merge__: /src/authors/thanh_le_van.yaml
+    roles: [ contributor ]
 argument_groups:
   - name: Inputs
     arguments:
@@ -53,7 +56,7 @@ argument_groups:
         default: 0.05
         min: 0
         max: 1
-        description: P-value below which a gene counts as significant for `--output_top`.
+        description: Benjamini-Hochberg adjusted p-value (`fdr_bh`) below which a gene counts as significant for `--output_top`.
       - name: "--top_n"
         type: integer
         required: false
@@ -65,7 +68,7 @@ argument_groups:
         type: file
         description: |
           CSV file with the columns `rank`, `gene_id`, `gene_name`,
-          `median_shift`, `pvalue` and `n_cells`.
+          `median_shift`, `pvalue`, `fdr_bh` and `n_cells`.
         direction: output
         required: true
         example: ranked_genes.csv
