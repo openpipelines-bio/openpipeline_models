@@ -72,6 +72,7 @@ def test_ranking_and_top_table(run_component, shift_paths, tmp_path):
         "gene_name",
         "median_shift",
         "pvalue",
+        "fdr_bh",
         "n_cells",
     ]
     # RARE has the largest shift but fails the coverage filter
@@ -80,8 +81,22 @@ def test_ranking_and_top_table(run_component, shift_paths, tmp_path):
     assert list(ranked["n_cells"]) == [N_CELLS] * 3
     assert ranked.loc[0, "pvalue"] < 1e-6
     assert ranked.loc[2, "pvalue"] > 0.5
+    assert (ranked["fdr_bh"] >= ranked["pvalue"]).all()
+    assert ranked.loc[0, "fdr_bh"] < 1e-5
     # only UP is significant from rank 1 onwards
     assert list(top["gene_name"]) == ["UP"]
+
+
+def test_cutoff_applies_to_fdr_bh(run_component, shift_paths, tmp_path):
+    ranked, _ = run(run_component, shift_paths, tmp_path)
+    pvalue, fdr_bh = ranked.loc[0, ["pvalue", "fdr_bh"]]
+    assert pvalue < fdr_bh
+    # UP passes on its raw p-value but not on its adjusted one
+    cutoff = (pvalue + fdr_bh) / 2
+    _, top = run(
+        run_component, shift_paths, tmp_path, "--pvalue_cutoff", f"{cutoff:.6e}"
+    )
+    assert top.empty
 
 
 def test_top_n_and_disease_shift(run_component, shift_paths, tmp_path):

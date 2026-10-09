@@ -2,7 +2,7 @@ import sys
 
 import numpy as np
 import pandas as pd
-from scipy.stats import mannwhitneyu
+from scipy.stats import false_discovery_control, mannwhitneyu
 
 ## VIASH START
 par = {
@@ -24,7 +24,15 @@ from setup_logger import setup_logger  # noqa: E402
 
 logger = setup_logger()
 
-OUTPUT_COLUMNS = ["rank", "gene_id", "gene_name", "median_shift", "pvalue", "n_cells"]
+OUTPUT_COLUMNS = [
+    "rank",
+    "gene_id",
+    "gene_name",
+    "median_shift",
+    "pvalue",
+    "fdr_bh",
+    "n_cells",
+]
 
 
 def write(ranked, n_top):
@@ -82,13 +90,14 @@ def main():
         mannwhitneyu(values[gene], baseline, alternative="greater").pvalue
         for gene in ranked["gene_id"]
     ]
+    ranked["fdr_bh"] = false_discovery_control(ranked["pvalue"], method="bh")
     ranked["rank"] = np.arange(ranked.shape[0]) + 1
     ranked = ranked[OUTPUT_COLUMNS]
 
     if par["top_n"] is not None:
         n_top = min(par["top_n"], ranked.shape[0])
     else:
-        significant = (ranked["pvalue"] < par["pvalue_cutoff"]).to_numpy()
+        significant = (ranked["fdr_bh"] < par["pvalue_cutoff"]).to_numpy()
         # length of the uninterrupted run of significant genes from rank 1
         n_top = ranked.shape[0] if significant.all() else int(np.argmin(significant))
     logger.info("Ranked %i genes, %i in the top table", ranked.shape[0], n_top)
