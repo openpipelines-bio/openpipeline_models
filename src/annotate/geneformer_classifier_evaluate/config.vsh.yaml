@@ -1,0 +1,91 @@
+name: geneformer_classifier_evaluate
+namespace: "annotate"
+scope: "public"
+description: |
+  Evaluate a fine-tuned Geneformer cell classifier on held out cells.
+
+  Runs `Classifier.evaluate_saved_model` of the geneformer package on
+  `--input`, typically the test set written by
+  `convert/from_h5mu_to_geneformer_dataset`, and reports the accuracy, the
+  macro F1, the precision and recall of every label and, for 2 labels, the ROC
+  AUC. The metrics are computed on all cells and, with `--obs_report_by`, per
+  value of each of those columns, for example per donor or data source.
+
+  Geneformer predicts in batches of `--forward_batch_size` cells and skips the
+  last cell when it would end up alone in a batch; the predictions then hold
+  one cell less than `--input`.
+authors:
+  - __merge__: /src/authors/marilyn_degraeve.yaml
+    roles: [ author, maintainer ]
+argument_groups:
+  - name: Inputs
+    arguments:
+      - name: "--input"
+        type: file
+        required: true
+        description: Dataset directory with the cells to evaluate on.
+        example: test.dataset
+      - name: "--id_class_dict"
+        type: file
+        required: true
+        description: Pickle file mapping the class ids of `--input` to the labels.
+        example: id_class_dict.pkl
+      - name: "--model"
+        type: file
+        required: true
+        description: Directory holding the fine-tuned cell classifier.
+        example: finetuned_model
+      - name: "--model_version"
+        type: string
+        default: "V2"
+        choices: ["V1", "V2"]
+        description: Geneformer model series of `--model`.
+      - name: "--obs_report_by"
+        type: string
+        multiple: true
+        required: false
+        description: Columns of `--input` to also report the metrics per value of.
+        example: ["donor_id"]
+      - name: "--forward_batch_size"
+        type: integer
+        default: 32
+        min: 2
+        description: Number of cells per forward pass.
+  - name: Outputs
+    arguments:
+      - name: "--output_metrics"
+        type: file
+        direction: output
+        required: true
+        description: |
+          CSV with one row for all cells (`group_by` and `group` are `all`) and
+          one per value of every `--obs_report_by` column.
+        example: metrics.csv
+      - name: "--output_confusion"
+        type: file
+        direction: output
+        required: true
+        description: CSV with the confusion matrix of all cells, true labels in the rows.
+        example: confusion.csv
+      - name: "--output_predictions"
+        type: file
+        direction: output
+        required: true
+        description: CSV with the true and predicted label and the class probabilities of every cell.
+        example: predictions.csv
+resources:
+  - type: python_script
+    path: script.py
+  - path: /src/utils/setup_logger.py
+test_resources:
+  - type: python_script
+    path: test.py
+  - path: /resources_test/geneformer
+engines:
+  - type: docker
+    __merge__: [/src/base/geneformer_engine.yaml, /src/base/requirements/python_test_setup.yaml, .]
+runners:
+  - type: executable
+  - type: nextflow
+    directives:
+      label: [midcpu, midmem, gpu]

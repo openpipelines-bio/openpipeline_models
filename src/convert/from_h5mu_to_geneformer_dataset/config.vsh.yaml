@@ -1,0 +1,191 @@
+name: from_h5mu_to_geneformer_dataset
+namespace: "convert"
+scope: "public"
+description: |
+  Convert labelled, tokenized cells to the HuggingFace datasets used to
+  fine-tune a Geneformer cell classifier, split into train, eval and test sets.
+
+  Reads the rank value encodings written by `transform/geneformer_tokenize` and
+  the labels in `--obs_label`, for example the `disease` / `healthy` labels of
+  `perturbation/label_cells`. Cells with another label are dropped.
+
+  The split is per donor by default (`--split_level donor`): every donor goes
+  to exactly one of train, eval and test, so the eval and test metrics measure
+  how the classifier generalises to donors it has not seen. The donors holding
+  the rarest label are dealt over the three sets first, to reach
+  `--test_size` and `--eval_size` of the cells of that label, then the other
+  donors are dealt to reach the same fractions of the remaining cells. The
+  split fails when a label is missing from a set, for example when fewer than 3
+  donors hold the rarest label; `--split_level cell` splits the cells
+  instead, per label, at the cost of cells of one donor ending up in several
+  sets.
+
+  The hyperparameter search uses a downsampled copy of the train and eval
+  sets, `--output_train_search`, with at most `--max_cells_per_label` cells of
+  each label. The full train and eval sets, `--output_train`, are used to train
+  the final model. The test set is never downsampled.
+
+  `--disease_marker_genes` and `--healthy_marker_genes` score the cells with
+  `scanpy.tl.score_genes` on the log-normalized `--marker_layer`; the mean score
+  per label and set goes to `--output_label_qc`, as a check that the labels
+  follow the expected biology.
+authors:
+  - __merge__: /src/authors/marilyn_degraeve.yaml
+    roles: [ author, maintainer ]
+argument_groups:
+  - name: Inputs
+    arguments:
+      - name: "--input"
+        type: file
+        description: Input h5mu file with tokenized and labelled cells.
+        direction: input
+        required: true
+        example: input.h5mu
+      - name: "--modality"
+        description: Which modality from the input MuData file to process.
+        type: string
+        default: "rna"
+        required: false
+      - name: "--obsm_input"
+        type: string
+        default: "geneformer_tokens"
+        description: "`.obsm` key holding the padded model input tokens."
+      - name: "--uns_input"
+        type: string
+        default: "geneformer_tokenize"
+        description: "`.uns` key holding the tokenizer settings written by `transform/geneformer_tokenize`."
+      - name: "--model_version"
+        type: string
+        default: "V2"
+        choices: ["V1", "V2"]
+        description: Geneformer model series the cells were tokenized for.
+  - name: Labels
+    arguments:
+      - name: "--obs_label"
+        type: string
+        default: "geneformer_finetune_group"
+        description: "`.obs` column holding the labels to train the classifier on."
+      - name: "--labels"
+        type: string
+        multiple: true
+        default: ["disease", "healthy"]
+        description: |
+          Values of `--obs_label` to train on, at least 2. Cells with another
+          value are dropped. The order sets the class ids.
+  - name: Split
+    arguments:
+      - name: "--split_level"
+        type: string
+        default: "donor"
+        choices: ["donor", "cell"]
+        description: Split whole donors (`--obs_donor`) or single cells over the train, eval and test sets.
+      - name: "--obs_donor"
+        type: string
+        required: false
+        description: "`.obs` column holding the donor of each cell. Required with `--split_level donor`."
+        example: "donor_id"
+      - name: "--test_size"
+        type: double
+        default: 0.1
+        min: 0
+        max: 1
+        description: Fraction of the cells of each label held out for the test set.
+      - name: "--eval_size"
+        type: double
+        default: 0.1
+        min: 0
+        max: 1
+        description: Fraction of the cells of each label held out for the eval set of the hyperparameter search.
+      - name: "--max_cells_per_label"
+        type: integer
+        min: 1
+        default: 3000
+        description: |
+          Maximum number of cells of each label in `--output_train_search`,
+          over the train and eval sets together.
+      - name: "--seed"
+        type: integer
+        default: 42
+        description: Seed of the split and the downsampling.
+      - name: "--obs_report_by"
+        type: string
+        multiple: true
+        required: false
+        description: |
+          `.obs` columns copied into the datasets, for example the donor or the
+          data source, to report the test metrics per group.
+  - name: Marker QC
+    arguments:
+      - name: "--disease_marker_genes"
+        type: string
+        multiple: true
+        required: false
+        description: Marker genes expected to be high in the disease cells.
+        example: ["TREM2", "APOE", "SPP1"]
+      - name: "--healthy_marker_genes"
+        type: string
+        multiple: true
+        required: false
+        description: Marker genes expected to be high in the healthy cells.
+        example: ["P2RY12", "TMEM119", "CX3CR1"]
+      - name: "--var_gene_names"
+        type: string
+        required: false
+        description: "`.var` column holding the gene symbols of the marker genes. Defaults to the `.var` index."
+      - name: "--marker_layer"
+        type: string
+        required: false
+        description: Layer holding the log-normalized expression to score the marker genes on. Defaults to `.X`.
+  - name: Outputs
+    arguments:
+      - name: "--output_train"
+        type: file
+        direction: output
+        required: true
+        description: Dataset directory with the cells of the train and eval sets, to train the final model.
+        example: train.dataset
+      - name: "--output_train_search"
+        type: file
+        direction: output
+        required: true
+        description: |
+          Dataset directory with the downsampled train and eval sets for the
+          hyperparameter search, with the set of each cell in the `split`
+          column.
+        example: train_search.dataset
+      - name: "--output_test"
+        type: file
+        direction: output
+        required: true
+        description: Dataset directory with the cells of the test set.
+        example: test.dataset
+      - name: "--output_id_class_dict"
+        type: file
+        direction: output
+        required: true
+        description: Pickle file mapping the class ids of the datasets to the labels.
+        example: id_class_dict.pkl
+      - name: "--output_label_qc"
+        type: file
+        direction: output
+        required: true
+        description: |
+          CSV with the number of cells and donors of each label per set, and the
+          mean marker scores when marker genes were given.
+        example: label_qc.csv
+resources:
+  - type: python_script
+    path: script.py
+  - path: /src/utils/setup_logger.py
+  - path: /src/utils/geneformer_tokens.py
+test_resources:
+  - type: python_script
+    path: test.py
+engines:
+  - type: docker
+    __merge__: [/src/base/geneformer_engine.yaml, /src/base/requirements/python_test_setup.yaml, .]
+runners:
+  - type: executable
+  - type: nextflow
+    directives:
+      label: [midcpu, midmem, middisk]

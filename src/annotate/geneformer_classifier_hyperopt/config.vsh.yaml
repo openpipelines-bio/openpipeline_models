@@ -1,0 +1,136 @@
+name: geneformer_classifier_hyperopt
+namespace: "annotate"
+scope: "public"
+description: |
+  Search the fine-tuning hyperparameters of a Geneformer cell classifier with
+  Ray Tune, for one number of frozen layers.
+
+  Runs `Classifier.validate` of the geneformer package on the train and eval
+  sets of `--input` (the `split` column written by
+  `convert/from_h5mu_to_geneformer_dataset`). Each of the `--n_trials` trials
+  fine-tunes `--model` with a learning rate, weight decay and number of epochs
+  drawn by the HyperOpt searcher, and is scored on the eval set. The other
+  settings are fixed: a cosine learning rate schedule with 10% warmup, and bf16
+  on a GPU that supports it.
+
+  The trials are compared on `objective`, the eval accuracy plus the eval macro
+  F1 after the last epoch. The search checkpoints stay inside the component;
+  train the final model with `annotate/geneformer_classifier_train` and
+  `--output_best`.
+
+  One trial runs per visible GPU, or one at a time on the CPU, which is only
+  practical for tests.
+authors:
+  - __merge__: /src/authors/marilyn_degraeve.yaml
+    roles: [ author, maintainer ]
+argument_groups:
+  - name: Inputs
+    arguments:
+      - name: "--input"
+        type: file
+        required: true
+        description: Dataset directory with the train and eval cells in the `split` column.
+        example: train_search.dataset
+      - name: "--id_class_dict"
+        type: file
+        required: true
+        description: Pickle file mapping the class ids of `--input` to the labels.
+        example: id_class_dict.pkl
+      - name: "--model"
+        type: file
+        required: true
+        description: Directory holding the pretrained Geneformer model to fine-tune.
+        example: Geneformer-V2-316M
+      - name: "--model_version"
+        type: string
+        default: "V2"
+        choices: ["V1", "V2"]
+        description: Geneformer model series of `--model`.
+  - name: Search space
+    arguments:
+      - name: "--freeze_layers"
+        type: integer
+        required: true
+        min: 0
+        description: Number of encoder layers, counted from the input, that are not fine-tuned.
+        example: 10
+      - name: "--n_trials"
+        type: integer
+        default: 15
+        min: 1
+        description: Number of trials.
+      - name: "--lr_min"
+        type: double
+        default: 5e-6
+        description: Lower bound of the learning rate, drawn log-uniformly.
+      - name: "--lr_max"
+        type: double
+        default: 5e-4
+        description: Upper bound of the learning rate.
+      - name: "--weight_decay_min"
+        type: double
+        default: 0.0
+        description: Lower bound of the weight decay, drawn uniformly.
+      - name: "--weight_decay_max"
+        type: double
+        default: 0.3
+        description: Upper bound of the weight decay.
+      - name: "--epochs"
+        type: integer
+        multiple: true
+        default: [1, 2, 3]
+        description: Numbers of epochs to choose from.
+  - name: Training options
+    arguments:
+      - name: "--batch_size"
+        type: integer
+        default: 8
+        min: 1
+        description: Number of cells per training and eval step, per device.
+      - name: "--gradient_accumulation_steps"
+        type: integer
+        default: 1
+        min: 1
+        description: Number of steps to accumulate the gradients over.
+      - name: "--mixed_precision"
+        type: string
+        default: "auto"
+        choices: ["auto", "bf16", "no"]
+        description: |
+          `auto` trains in bf16 when a GPU supporting it is visible and in fp32
+          otherwise, `bf16` fails without such a GPU, `no` always trains in fp32.
+      - name: "--seed"
+        type: integer
+        default: 42
+        description: Seed of the training and of the searcher.
+  - name: Outputs
+    arguments:
+      - name: "--output_trials"
+        type: file
+        direction: output
+        required: true
+        description: CSV with the settings and eval metrics of every trial, best first.
+        example: trials.csv
+      - name: "--output_best"
+        type: file
+        direction: output
+        required: true
+        description: JSON with the settings and eval metrics of the best trial.
+        example: best.json
+resources:
+  - type: python_script
+    path: script.py
+  - path: /src/utils/setup_logger.py
+  - path: /src/utils/geneformer_training.py
+test_resources:
+  - type: python_script
+    path: test.py
+  - path: /resources_test/geneformer
+engines:
+  - type: docker
+    __merge__: [/src/base/geneformer_engine.yaml, /src/base/requirements/python_test_setup.yaml, .]
+runners:
+  - type: executable
+  - type: nextflow
+    directives:
+      label: [highcpu, highmem, veryhighdisk, gpu]

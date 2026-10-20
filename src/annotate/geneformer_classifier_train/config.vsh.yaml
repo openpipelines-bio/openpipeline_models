@@ -1,0 +1,82 @@
+name: geneformer_classifier_train
+namespace: "annotate"
+scope: "public"
+description: |
+  Fine-tune a Geneformer cell classifier on all cells of a dataset, with the
+  settings of the best trial of `annotate/geneformer_classifier_hyperopt`.
+
+  Runs `Classifier.train_all_data` of the geneformer package on `--input`,
+  typically the full train and eval sets written by
+  `convert/from_h5mu_to_geneformer_dataset`, with the number of frozen layers
+  and the training arguments of `--params`. No eval set is used and only the
+  final weights are kept.
+
+  The output model directory holds `config.json`, `model.safetensors`, the
+  label mapping `id_class_dict.pkl` and the settings in
+  `training_params.json`. It can be passed as `--model` to
+  `dimred/geneformer_embeddings_extract` and the workflows using it.
+authors:
+  - __merge__: /src/authors/marilyn_degraeve.yaml
+    roles: [ author, maintainer ]
+argument_groups:
+  - name: Inputs
+    arguments:
+      - name: "--input"
+        type: file
+        required: true
+        description: Dataset directory with the cells to train on.
+        example: train.dataset
+      - name: "--id_class_dict"
+        type: file
+        required: true
+        description: Pickle file mapping the class ids of `--input` to the labels.
+        example: id_class_dict.pkl
+      - name: "--model"
+        type: file
+        required: true
+        description: Directory holding the pretrained Geneformer model to fine-tune.
+        example: Geneformer-V2-316M
+      - name: "--model_version"
+        type: string
+        default: "V2"
+        choices: ["V1", "V2"]
+        description: Geneformer model series of `--model`.
+      - name: "--params"
+        type: file
+        required: true
+        description: JSON with the frozen layers and training arguments, the `--output_best` of `annotate/geneformer_classifier_hyperopt`.
+        example: best.json
+  - name: Training options
+    arguments:
+      - name: "--mixed_precision"
+        type: string
+        default: "auto"
+        choices: ["auto", "bf16", "no"]
+        description: |
+          `auto` trains in bf16 when a GPU supporting it is visible and in fp32
+          otherwise, `bf16` fails without such a GPU, `no` always trains in fp32.
+  - name: Outputs
+    arguments:
+      - name: "--output_model"
+        type: file
+        direction: output
+        required: true
+        description: Directory for the fine-tuned model.
+        example: finetuned_model
+resources:
+  - type: python_script
+    path: script.py
+  - path: /src/utils/setup_logger.py
+  - path: /src/utils/geneformer_training.py
+test_resources:
+  - type: python_script
+    path: test.py
+  - path: /resources_test/geneformer
+engines:
+  - type: docker
+    __merge__: [/src/base/geneformer_engine.yaml, /src/base/requirements/python_test_setup.yaml, .]
+runners:
+  - type: executable
+  - type: nextflow
+    directives:
+      label: [highcpu, highmem, highdisk, gpu]

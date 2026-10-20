@@ -1,3 +1,4 @@
+import json
 import re
 import sys
 from subprocess import CalledProcessError
@@ -148,6 +149,72 @@ def test_cls_mode_needs_v2(run_component, input_path, random_h5mu_path):
     with pytest.raises(CalledProcessError) as err:
         run_embed(run_component, input_path, random_h5mu_path(), "--emb_mode", "cls")
     assert re.search(r"V1 models do not have", err.value.stdout.decode("utf-8"))
+
+
+@pytest.fixture
+def finetuned_model_dir(tmp_path):
+    """A cell classifier with 2 classes built from Geneformer-V1-10M, the way
+    annotate/geneformer_classifier_train saves one."""
+    from transformers import BertForSequenceClassification
+
+    model = BertForSequenceClassification.from_pretrained(model_dir, num_labels=2)
+    path = tmp_path / "finetuned"
+    model.save_pretrained(path)
+    return str(path)
+
+
+def test_finetuned_model(
+    run_component, input_path, finetuned_model_dir, random_h5mu_path
+):
+    pretrained = run_embed(run_component, input_path, random_h5mu_path())
+    output_path = random_h5mu_path()
+    run_component(
+        [
+            "--input",
+            input_path,
+            "--output",
+            output_path,
+            "--model",
+            finetuned_model_dir,
+            "--model_version",
+            "V1",
+            "--forward_batch_size",
+            "5",
+        ]
+    )
+    finetuned = mu.read_h5mu(output_path).mod["rna"].obsm["X_geneformer"]
+    assert finetuned.shape == (24, EMB_DIMS)
+    # the classifier head is not used for the embedding and the encoder weights
+    # are the pretrained ones, so the embeddings must be the same
+    assert np.allclose(finetuned, pretrained.mod["rna"].obsm["X_geneformer"], atol=1e-5)
+
+
+def test_unknown_architecture_errors(
+    run_component, input_path, finetuned_model_dir, random_h5mu_path
+):
+    config_path = f"{finetuned_model_dir}/config.json"
+    with open(config_path) as f:
+        config = json.load(f)
+    config["architectures"] = ["BertForTokenClassification"]
+    with open(config_path, "w") as f:
+        json.dump(config, f)
+    with pytest.raises(CalledProcessError) as err:
+        run_component(
+            [
+                "--input",
+                input_path,
+                "--output",
+                random_h5mu_path(),
+                "--model",
+                finetuned_model_dir,
+                "--model_version",
+                "V1",
+            ]
+        )
+    assert re.search(
+        r"has architecture \['BertForTokenClassification'\]",
+        err.value.stdout.decode("utf-8"),
+    )
 
 
 def test_untokenized_input_errors(run_component, tokenized_h5mu, random_h5mu_path):

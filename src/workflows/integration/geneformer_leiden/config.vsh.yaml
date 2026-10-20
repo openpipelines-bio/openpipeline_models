@@ -36,7 +36,9 @@ argument_groups:
       - name: "--model"
         type: file
         required: true
-        description: Directory holding a pretrained Geneformer model.
+        description: |
+          Directory holding a pretrained Geneformer model, or a model
+          fine-tuned by `workflows/embedding_model/geneformer_finetune`.
         example: Geneformer-V2-316M
   - name: Gene ids
     arguments:

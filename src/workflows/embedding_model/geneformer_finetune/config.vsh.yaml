@@ -1,0 +1,278 @@
+name: "geneformer_finetune"
+namespace: "workflows/embedding_model"
+scope: "public"
+description: |
+  Fine-tune a Geneformer model to separate disease from healthy cells, for an
+  embedding along that axis.
+
+  Starts from the output of `workflows/integration/geneformer_leiden`, which
+  holds the tokens, and labels the disease and healthy cells with the same
+  cluster rules as `workflows/perturbation/geneformer_insilico`. The labels are
+  written to `--obs_label_output`; pass `--obs_cluster <obs_label_output>
+  --disease_clusters disease --healthy_clusters healthy` to
+  `geneformer_insilico` to perturb the cells the model was trained on.
+
+  Steps:
+    1. label the disease and healthy cells (`perturbation/label_cells`)
+    2. split the labelled cells into train, eval and test sets, per donor by
+       default, and score the marker genes
+       (`convert/from_h5mu_to_geneformer_dataset`)
+    3. per value of `--freeze_layers`, in parallel: search the learning rate,
+       weight decay and number of epochs on the downsampled train and eval
+       sets (`annotate/geneformer_classifier_hyperopt`)
+    4. train the final model on the full train and eval sets with the best
+       settings over all branches (`annotate/geneformer_classifier_train`)
+    5. evaluate it on the test set (`annotate/geneformer_classifier_evaluate`)
+
+  The fine-tuned model in `--output_model` can be passed as `--model` to
+  `geneformer_leiden` and `geneformer_insilico`; run `geneformer_leiden` with
+  it first, so the embedding and the virtual cells of the perturbation come
+  from the same model.
+
+  The fine-tuned model is tuned to the disease / healthy axis of these labels.
+  For screens along another axis, use the pretrained model or fine-tune again
+  on new labels.
+authors:
+  - __merge__: /src/authors/marilyn_degraeve.yaml
+    roles: [ author, maintainer ]
+argument_groups:
+  - name: Inputs
+    arguments:
+      - name: "--input"
+        type: file
+        required: true
+        description: Output of `workflows/integration/geneformer_leiden`, with the tokens and the label columns.
+        example: dataset.h5mu
+      - name: "--modality"
+        description: Which modality to process.
+        type: string
+        default: "rna"
+        required: false
+      - name: "--model"
+        type: file
+        required: true
+        description: Directory holding the pretrained Geneformer model to fine-tune, the one the tokens were made for.
+        example: Geneformer-V2-316M
+      - name: "--model_version"
+        type: string
+        default: "V2"
+        choices: ["V1", "V2"]
+        description: Geneformer model series of `--model`.
+      - name: "--obsm_tokens"
+        type: string
+        default: "geneformer_tokens"
+        description: "`.obsm` slot holding the model input tokens."
+  - name: Cell labels
+    arguments:
+      - name: "--obs_cluster"
+        type: string
+        required: true
+        description: "`.obs` column holding the clustering the rules select from."
+        example: "clusters_subclustered"
+      - name: "--obs_reference"
+        type: string
+        required: false
+        description: "`.obs` column holding a second clustering, used by the reference cluster rules."
+        example: "AuthorCellState"
+      - name: "--disease_clusters"
+        type: string
+        required: true
+        multiple: true
+        description: Values of `--obs_cluster` that select disease cells.
+        example: ["5,0"]
+      - name: "--disease_reference_clusters"
+        type: string
+        required: false
+        multiple: true
+        description: Values of `--obs_reference` the disease cells must also have.
+        example: ["Mic.13"]
+      - name: "--healthy_clusters"
+        type: string
+        required: true
+        multiple: true
+        description: Values of `--obs_cluster` that select healthy cells.
+        example: ["7", "9", "11"]
+      - name: "--healthy_reference_clusters"
+        type: string
+        required: false
+        multiple: true
+        description: Values of `--obs_reference` the healthy cells must also have.
+        example: ["Mic.2", "Mic.3", "Mic.4", "Mic.5"]
+      - name: "--obs_label_output"
+        type: string
+        default: "geneformer_finetune_group"
+        description: "`.obs` column for the labels `disease`, `healthy` and `unused`."
+  - name: Split
+    arguments:
+      - name: "--split_level"
+        type: string
+        default: "donor"
+        choices: ["donor", "cell"]
+        description: Split whole donors (`--obs_donor`) or single cells over the train, eval and test sets.
+      - name: "--obs_donor"
+        type: string
+        required: false
+        description: "`.obs` column holding the donor of each cell. Required with `--split_level donor`."
+        example: "donor_id"
+      - name: "--test_size"
+        type: double
+        default: 0.1
+        description: Fraction of the cells of each label held out for the test set.
+      - name: "--eval_size"
+        type: double
+        default: 0.1
+        description: Fraction of the cells of each label held out for the eval set of the search.
+      - name: "--max_cells_per_label"
+        type: integer
+        default: 3000
+        description: Maximum number of cells of each label in the hyperparameter search.
+      - name: "--obs_report_by"
+        type: string
+        multiple: true
+        required: false
+        description: "`.obs` columns to also report the test metrics per value of, for example the donor or the data source."
+        example: ["donor_id"]
+      - name: "--seed"
+        type: integer
+        default: 42
+        description: Seed of the split, the downsampling, the searcher and the training.
+  - name: Marker QC
+    arguments:
+      - name: "--disease_marker_genes"
+        type: string
+        multiple: true
+        required: false
+        description: Marker genes expected to be high in the disease cells. Skipped when not given.
+        example: ["TREM2", "APOE", "SPP1", "CST7", "LPL", "AXL", "CD9"]
+      - name: "--healthy_marker_genes"
+        type: string
+        multiple: true
+        required: false
+        description: Marker genes expected to be high in the healthy cells. Skipped when not given.
+        example: ["P2RY12", "TMEM119", "CX3CR1"]
+      - name: "--var_gene_names"
+        type: string
+        required: false
+        description: "`.var` column holding the gene symbols of the marker genes. Defaults to the `.var` index."
+      - name: "--marker_layer"
+        type: string
+        required: false
+        description: Layer holding the log-normalized expression to score the marker genes on. Defaults to `.X`.
+  - name: Hyperparameter search
+    arguments:
+      - name: "--freeze_layers"
+        type: integer
+        multiple: true
+        default: [6, 10, 14]
+        description: |
+          Numbers of frozen encoder layers, one parallel search each. The
+          defaults suit Geneformer-V2-316M, which has 18 layers.
+      - name: "--n_trials"
+        type: integer
+        default: 15
+        description: Number of trials per value of `--freeze_layers`.
+      - name: "--lr_min"
+        type: double
+        default: 5e-6
+        description: Lower bound of the learning rate, drawn log-uniformly.
+      - name: "--lr_max"
+        type: double
+        default: 5e-4
+        description: Upper bound of the learning rate.
+      - name: "--weight_decay_min"
+        type: double
+        default: 0.0
+        description: Lower bound of the weight decay, drawn uniformly.
+      - name: "--weight_decay_max"
+        type: double
+        default: 0.3
+        description: Upper bound of the weight decay.
+      - name: "--epochs"
+        type: integer
+        multiple: true
+        default: [1, 2, 3]
+        description: Numbers of epochs to choose from.
+  - name: Training options
+    arguments:
+      - name: "--batch_size"
+        type: integer
+        default: 8
+        description: Number of cells per training step, per device.
+      - name: "--gradient_accumulation_steps"
+        type: integer
+        default: 1
+        description: Number of steps to accumulate the gradients over.
+      - name: "--mixed_precision"
+        type: string
+        default: "auto"
+        choices: ["auto", "bf16", "no"]
+        description: "`auto` trains in bf16 on a GPU that supports it and in fp32 otherwise."
+      - name: "--forward_batch_size"
+        type: integer
+        default: 32
+        description: Number of cells per forward pass of the evaluation.
+  - name: Outputs
+    arguments:
+      - name: "--output"
+        type: file
+        required: true
+        direction: output
+        description: The input with the labels in `--obs_label_output`.
+        example: output.h5mu
+      - name: "--output_model"
+        type: file
+        required: true
+        direction: output
+        description: Directory with the fine-tuned model.
+        example: finetuned_model
+      - name: "--output_trials"
+        type: file
+        required: true
+        multiple: true
+        direction: output
+        description: The trials CSV of every value of `--freeze_layers`.
+        example: trials_*.csv
+      - name: "--output_label_qc"
+        type: file
+        required: true
+        direction: output
+        description: Number of cells and donors and the mean marker scores per label and set.
+        example: label_qc.csv
+      - name: "--output_metrics"
+        type: file
+        required: true
+        direction: output
+        description: Test set metrics, for all cells and per `--obs_report_by` group.
+        example: metrics.csv
+      - name: "--output_confusion"
+        type: file
+        required: true
+        direction: output
+        description: Confusion matrix of the test set.
+        example: confusion.csv
+      - name: "--output_predictions"
+        type: file
+        required: true
+        direction: output
+        description: Predicted label and class probabilities of every test cell.
+        example: predictions.csv
+dependencies:
+  - name: perturbation/label_cells
+  - name: convert/from_h5mu_to_geneformer_dataset
+  - name: annotate/geneformer_classifier_hyperopt
+  - name: annotate/geneformer_classifier_train
+  - name: annotate/geneformer_classifier_evaluate
+resources:
+  - type: nextflow_script
+    path: main.nf
+    entrypoint: run_wf
+  - type: file
+    path: /src/workflows/utils/
+test_resources:
+  - type: nextflow_script
+    path: test.nf
+    entrypoint: test_wf
+  - path: /resources_test/pbmc_1k_protein_v3
+  - path: /resources_test/geneformer
+runners:
+  - type: nextflow
