@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from datasets import Dataset
 from geneformer import EmbExtractor
+from transformers import AutoConfig
 
 ## VIASH START
 par = {
@@ -29,6 +30,7 @@ meta = {"resources_dir": "src/utils", "cpus": 4, "temp_dir": None}
 sys.path.append(meta["resources_dir"])
 from setup_logger import setup_logger  # noqa: E402
 from compress_h5mu import write_h5ad_to_h5mu_with_compression  # noqa: E402
+from geneformer_tokens import get_tokens  # noqa: E402
 
 logger = setup_logger()
 
@@ -37,33 +39,20 @@ logger = setup_logger()
 ROW_LABEL = "cell_index"
 
 
-def get_tokens(adata):
-    if par["obsm_input"] not in adata.obsm:
-        raise ValueError(
-            f"'{par['obsm_input']}' not found in .obsm. Tokenize the cells with "
-            f"transform/geneformer_tokenize first. Available: {list(adata.obsm)}"
-        )
-    if par["uns_input"] not in adata.uns:
-        raise ValueError(
-            f"'{par['uns_input']}' not found in .uns. Tokenize the cells with "
-            f"transform/geneformer_tokenize first. Available: {list(adata.uns)}"
-        )
-    settings = adata.uns[par["uns_input"]]
-    if settings["model_version"] != par["model_version"]:
-        raise ValueError(
-            f"The cells were tokenized for model version {settings['model_version']}, "
-            f"but --model_version is {par['model_version']}. Tokenize again with "
-            "the model version of --model."
-        )
-
-    tokens = np.asarray(adata.obsm[par["obsm_input"]])
-    lengths = (tokens != settings["pad_token"]).sum(axis=1)
-    if np.any(lengths == 0):
-        empty = adata.obs_names[lengths == 0][:5].tolist()
-        raise ValueError(
-            f"{int((lengths == 0).sum())} cells have no tokens, e.g. {empty}"
-        )
-    return tokens, lengths
+def get_model_type(model_dir):
+    """Pretrained or fine-tuned cell classifier, and its number of classes,
+    from the architecture in the config.json of the model."""
+    config = AutoConfig.from_pretrained(model_dir)
+    architectures = config.architectures or []
+    if "BertForSequenceClassification" in architectures:
+        return "CellClassifier", config.num_labels
+    if "BertForMaskedLM" in architectures:
+        return "Pretrained", 0
+    raise ValueError(
+        f"--model has architecture {architectures}; expected a pretrained "
+        "Geneformer model (BertForMaskedLM) or a cell classifier fine-tuned "
+        "from one (BertForSequenceClassification)."
+    )
 
 
 def main():
@@ -73,6 +62,8 @@ def main():
         )
     if not os.path.isdir(par["model"]):
         raise ValueError(f"--model must be a directory, got {par['model']}")
+    model_type, num_classes = get_model_type(par["model"])
+    logger.info("Model type %s, %i classes", model_type, num_classes)
 
     nproc = int(meta["cpus"] or 1)
     if torch.cuda.is_available():
@@ -89,7 +80,9 @@ def main():
 
     logger.info("Reading modality '%s' from %s", par["modality"], par["input"])
     adata = mu.read_h5ad(par["input"], mod=par["modality"])
-    tokens, lengths = get_tokens(adata)
+    tokens, lengths, _ = get_tokens(
+        adata, par["obsm_input"], par["uns_input"], par["model_version"]
+    )
     logger.info(
         "%i cells, %i to %i tokens per cell", adata.n_obs, lengths.min(), lengths.max()
     )
@@ -103,8 +96,8 @@ def main():
     )
 
     extractor = EmbExtractor(
-        model_type="Pretrained",
-        num_classes=0,
+        model_type=model_type,
+        num_classes=num_classes,
         emb_mode=par["emb_mode"],
         max_ncells=None,
         emb_layer=par["emb_layer"],

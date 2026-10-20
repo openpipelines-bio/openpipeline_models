@@ -1,19 +1,27 @@
 # Shared docker engine for the components that import the geneformer package
-# (transform/geneformer_tokenize, dimred/geneformer_embeddings_extract).
+# (transform/geneformer_tokenize, dimred/geneformer_embeddings_extract, the
+# fine-tuning components in convert/ and annotate/).
 #
 # Geneformer is installed from the HuggingFace repository at a pinned commit,
 # with --no-deps; the python packages below are its own requirements.txt,
 # needed because `import geneformer` imports every submodule (classifier,
-# mtl_classifier, in_silico_perturber, ...).
+# mtl_classifier, in_silico_perturber, ...). Two of them are narrowed for the
+# fine-tuning: `ray[tune]` (the Classifier hyperparameter search needs the tune
+# extras, pinned to the version the search was verified with) and
+# `datasets~=3.6` (datasets 4 fails the Classifier data loading).
 #
-# The sed after the install makes EmbExtractor device-agnostic: upstream
-# hardcodes "cuda" in the forward loop (emb_extractor.py) while the model
-# loader already falls back to CPU (perturber_utils.py), so on a CPU-only node
-# the model loads and the first minibatch fails. The trailing `! grep` fails the
-# image build when upstream adds a "cuda" literal the sed does not cover, and
-# the final grep fails it when the patch did not land in the installed file. The
-# checkout is removed before locating the installed package, otherwise
-# `find_spec` resolves to the checkout and the installed copy stays unpatched.
+# The seds after the install make the code device-agnostic: upstream hardcodes
+# "cuda" in the EmbExtractor forward loop (emb_extractor.py), in the model init
+# and the Ray trial resources of the hyperparameter search (classifier.py) and
+# in the evaluation forward loop (evaluation_utils.py), while the model loader
+# already falls back to CPU (perturber_utils.py). On a CPU-only node the model
+# loads and the first minibatch or trial fails. classifier.py does not import
+# torch, so the sed adds the import. The `! grep` guards fail the image build
+# when upstream adds a "cuda" literal or a GPU trial resource the seds do not
+# cover, and the final greps fail it when a patch did not land in the installed
+# file. The checkout is removed before locating the installed package,
+# otherwise `find_spec` resolves to the checkout and the installed copy stays
+# unpatched.
 # build-essential is needed to build the accumulation-tree wheel of tdigest.
 # Comments cannot go inside the `run: |` block.
 image: pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
@@ -28,7 +36,7 @@ setup:
     __merge__: [/src/base/requirements/anndata_mudata.yaml, /src/base/requirements/scanpy.yaml, .]
     packages:
       - transformers~=4.46.0
-      - datasets~=4.0
+      - datasets~=3.6
       - bitsandbytes>=0.45.5
       - hyperopt>=0.2
       - loompy>=3.0
@@ -39,7 +47,7 @@ setup:
       - peft>=0.11.1
       - pyarrow>=12.0
       - pytz>=2023.0
-      - ray>=2.6
+      - ray[tune]==2.59.0
       - scikit-learn>=1.2
       - seaborn>=0.12
       - setuptools>=65.6
@@ -49,4 +57,4 @@ setup:
       - tqdm>=4.65
   - type: docker
     run: |
-      GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/ctheodoris/Geneformer /opt/Geneformer && cd /opt/Geneformer && git checkout 1f7fbae4e469a5f4f1af8c111a529cfe1b3829f5 && git lfs pull --include "geneformer/*" && pip install --no-deps /opt/Geneformer && cd / && rm -rf /opt/Geneformer && GF_DIR=$(python -c "import os, importlib.util; print(os.path.dirname(importlib.util.find_spec('geneformer').origin))") && sed -i -e 's/device="cuda"/device=("cuda" if torch.cuda.is_available() else "cpu")/' -e 's/\.to("cuda")/.to("cuda" if torch.cuda.is_available() else "cpu")/' "$GF_DIR/emb_extractor.py" && ! grep -nP '"cuda"(?! if torch\.cuda\.is_available\(\))' "$GF_DIR/emb_extractor.py" && grep -q 'device=("cuda" if torch.cuda.is_available() else "cpu")' "$GF_DIR/emb_extractor.py"
+      GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/ctheodoris/Geneformer /opt/Geneformer && cd /opt/Geneformer && git checkout 1f7fbae4e469a5f4f1af8c111a529cfe1b3829f5 && git lfs pull --include "geneformer/*" && pip install --no-deps /opt/Geneformer && cd / && rm -rf /opt/Geneformer && GF_DIR=$(python -c "import os, importlib.util; print(os.path.dirname(importlib.util.find_spec('geneformer').origin))") && sed -i -e 's/device="cuda"/device=("cuda" if torch.cuda.is_available() else "cpu")/' -e 's/\.to("cuda")/.to("cuda" if torch.cuda.is_available() else "cpu")/' "$GF_DIR/emb_extractor.py" && sed -i -e 's/\.to("cuda:0")/.to("cuda:0" if torch.cuda.is_available() else "cpu")/' -e 's/"gpu": 1}/"gpu": 1 if torch.cuda.is_available() else 0}/' -e 's/^import numpy as np$/import numpy as np\nimport torch/' "$GF_DIR/classifier.py" && sed -i -e 's/\.to("cuda")/.to("cuda" if torch.cuda.is_available() else "cpu")/g' "$GF_DIR/evaluation_utils.py" && ! grep -nP '"cuda(:0)?"(?! if torch\.cuda\.is_available\(\))' "$GF_DIR/emb_extractor.py" "$GF_DIR/classifier.py" "$GF_DIR/evaluation_utils.py" && ! grep -nP '"gpu": 1(?! if torch\.cuda\.is_available\(\))' "$GF_DIR/classifier.py" && grep -q 'device=("cuda" if torch.cuda.is_available() else "cpu")' "$GF_DIR/emb_extractor.py" && grep -q '^import torch$' "$GF_DIR/classifier.py" && grep -q '"gpu": 1 if torch.cuda.is_available() else 0}' "$GF_DIR/classifier.py" && grep -q '.to("cuda:0" if torch.cuda.is_available() else "cpu")' "$GF_DIR/classifier.py" && grep -q '.to("cuda" if torch.cuda.is_available() else "cpu")' "$GF_DIR/evaluation_utils.py"
