@@ -8,7 +8,10 @@ description: |
   Starts from the output of `workflows/integration/geneformer_leiden`: raw
   counts, the Geneformer embedding in `--obsm_embedding` and the clusterings.
   The disease and healthy clusters are read off the UMAP of that run; they are
-  specific to one dataset and clustering, and cannot be derived.
+  specific to one dataset and clustering, and cannot be derived. With a model
+  fine-tuned by `workflows/embedding_model/geneformer_finetune`, use the labels
+  it wrote instead: `--obs_cluster geneformer_finetune_group
+  --disease_clusters disease --healthy_clusters healthy`.
 
   Steps:
     1. label the disease and healthy cells from one or two clusterings
@@ -47,7 +50,10 @@ argument_groups:
       - name: "--model"
         type: file
         required: true
-        description: Directory holding the pretrained Geneformer model used for `--obsm_embedding`.
+        description: |
+          Directory holding the Geneformer model used for `--obsm_embedding`,
+          pretrained or fine-tuned by
+          `workflows/embedding_model/geneformer_finetune`.
         example: Geneformer-V2-316M
       - name: "--obsm_embedding"
         type: string
