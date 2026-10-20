@@ -12,12 +12,12 @@ openpipeline_models x.x.x (unreleased)
 
 * `workflows/perturbation/geneformer_insilico`: added a workflow to rank the single-gene knockouts that move disease cells towards the healthy state, scattered over batches of disease cells (PR #6).
 
-* `convert/from_h5mu_to_geneformer_dataset`, `annotate/geneformer_classifier_hyperopt`, `annotate/geneformer_classifier_train`, `annotate/geneformer_classifier_evaluate`: added components to fine-tune a Geneformer cell classifier: split the labelled cells per donor into train, eval and test sets, search the hyperparameters with Ray Tune, train the final model and evaluate it on the test set.
+* `convert/from_h5mu_to_geneformer_dataset`, `annotate/geneformer_classifier_hyperopt`, `annotate/geneformer_classifier_train`, `annotate/geneformer_classifier_evaluate`: added components to fine-tune a Geneformer cell classifier: split the labelled cells per donor into train, eval and test sets, search the hyperparameters with Ray Tune, train the final model and evaluate it on the test set (PR #7).
 
-* `workflows/embedding_model/geneformer_finetune`: added a workflow to fine-tune a Geneformer model on disease and healthy cells, with one hyperparameter search per number of frozen layers.
+* `workflows/embedding_model/geneformer_finetune`: added a workflow to fine-tune a Geneformer model on disease and healthy cells, with one hyperparameter search per number of frozen layers (PR #7).
 
 ## MINOR CHANGES
 
-* `dimred/geneformer_embeddings_extract`: accept a fine-tuned Geneformer cell classifier as `--model`; the model type is read from its `config.json`.
+* `dimred/geneformer_embeddings_extract`: accept a fine-tuned Geneformer cell classifier as `--model`; the model type is read from its `config.json` (PR #7).
 
-* Geneformer docker engine: install `ray[tune]` and `datasets~=3.6` for the fine-tuning, and make the classifier training and evaluation run on a CPU-only node.
+* Geneformer docker engine: install `ray[tune]` and `datasets~=3.6` for the fine-tuning, and make the classifier training and evaluation run on a CPU-only node (PR #7).
